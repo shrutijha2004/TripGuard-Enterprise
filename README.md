@@ -1,129 +1,16 @@
-# 🛡️ TripGuard Enterprise: Real-Time Edge AI & Cloud Fleet Safety System
+# React + Vite
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-Async-005571?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18.x-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![MediaPipe](https://img.shields.io/badge/MediaPipe-Edge%20AI-orange)](https://developers.google.com/mediapipe)
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
+Currently, two official plugins are available:
 
-## Project Name & Description
-**TripGuard Enterprise** is a production-grade, end-to-end fleet safety and monitoring architecture designed to prevent road accidents through real-time **Edge AI computer vision** and **offline speech recognition**. It bridges edge devices (in-cab hardware monitors) with a high-performance **FastAPI cloud backend** and an enterprise **React web dashboard** featuring real-time WebSocket telemetry and human-in-the-loop operator validation.
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
+## React Compiler
 
----
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-The system divides its responsibilities cleanly into two primary tiers: the **Edge AI In-Cab Client** (local real-time threat detection) and the **Cloud & Enterprise Web Command Center** (centralized telemetry aggregation and human-in-the-loop operator validation).
+## Expanding the Oxlint configuration
 
----
-
-### 1. Edge AI In-Cab Monitoring Tier (`/ai_prototypes`)
-
-The edge tier runs locally inside the vehicle, ensuring zero-latency detection of critical emergencies without relying on constant cloud connectivity for heavy AI inference.
-
-* **Autonomous Vision Drowsiness & Occupant Tracker (`vision_monitor.py`):**
-  * **Multi-Passenger Depth & Spatial Filtering:** Utilizing Google’s **MediaPipe Face Mesh** engine, the script tracks up to 6 cabin occupants simultaneously. It applies sophisticated spatial X-coordinate mapping and cheekbone geometry (landmarks `234` and `454`) to isolate the primary driver from passengers.
-  * **Eye Aspect Ratio (EAR) Calculation:** The system computes the precise mathematical ratio between the vertical eyelid distances and the horizontal eye width using high-precision facial landmarks:
-    $$\text{EAR} = \frac{\Vert{}p_2 - p_6\Vert{} + \Vert{}p_3 - p_5\Vert{}}{2 \times \Vert{}p_1 - p_4\Vert{}}$$
-  * **Micro-Sleep & Absence Detection:** If a driver's EAR drops below threshold configuration values for consecutive frames (e.g., 15–25 frames) or if the driver's face is lost from the Region of Interest entirely, the edge client locks in an emergency state.
-  * **Smart Client-Side Debouncing:** To prevent network flooding, a built-in cooldown timer (`COOLDOWN_SECONDS = 30.0`) ensures that continuous hazard frames throttle REST dispatch requests effectively.
-
-* **Offline Acoustic & NLP Distress Listener (`audio_test.py`):**
-  * **Privacy-First Offline Speech Recognition:** Powered by **Vosk** and running entirely offline, the audio monitor analyzes cabin audio streams without streaming raw audio data to third-party cloud servers, safeguarding passenger privacy.
-  * **Contextual Distress Dictionaries:** Scans real-time transcripts against an expanded dictionary of distress triggers (*"help me"*, *"let me out"*, *"call the police"*, high-decibel acoustic anomalies/screams)[cite: 4].
-  * **False-Alarm Verification Window:** When an initial distress phrase is matched, the system initiates a **5-second cancellation countdown**[cite: 4]. If the driver or a passenger speaks a cancellation phrase (*"I'm fine"*, *"false alarm"*) within that window, the alert is safely aborted[cite: 4]. If the timer expires without cancellation, the emergency is formally escalated[cite: 4].
-
----
-
-### 2. Cloud Gateway & Backend Tier (`/cloud_backend`)
-
-* **FastAPI Asynchronous Gateway (`main.py`):**
-  * Acts as the central orchestrator and webhook receiver. It exposes asynchronous REST endpoints (`POST /api/v1/alerts`) that accept standardized JSON safety telemetry payloads from any edge monitor.
-  * Manages an active **WebSocket Hub (`/ws/dashboard`)** that instantly pushes incoming alerts to connected web clients with sub-15ms propagation latency.
-
----
-
-### 3. Enterprise Web Command Center Tier (`/web_dashboard`)
-
-* **React & Tailwind CSS Command Center (`App.jsx`):**
-  * Renders a real-time fleet overview dashboard displaying active emergency metrics, system latency counters, and live WebSocket connection states.
-  * **Live Telemetry & GPS Mapping:** Automatically logs incoming alerts into a dynamic table with live Google Maps deep links (`location_lat`, `location_lng`) for rapid geographical reference.
-  * **Human-in-the-Loop Operator Validation:** Recognizes that AI can occasionally generate false positives. Operators are provided with dual action workflows on every live alert:
-    1. **Dispatch:** Formally logs the emergency, moves the incident to the permanent audit log, and simulates emergency service dispatch.
-    2. **Dismiss / False Positive:** Allows operators to review the live feed or telemetry and clear false alarms instantly, maintaining a clean audit trail.
-  * **Audit Log & CSV Export:** Automatically records resolved or dismissed incidents with timestamps and weekdays, enabling fleet managers to export full compliance reports via CSV data downloads.
- 
-
- ---
-
-## Key Features
-
-* **Autonomous Edge AI Vision (`vision_monitor.py`):** 
-  * Real-time multi-passenger tracking supporting up to 6 occupants using MediaPipe Face Mesh depth filtering and cheekbone geometry.
-  * Calculates **Eye Aspect Ratio (EAR)** dynamically to detect driver micro-sleeps and drowsiness.
-  * Automated alerts for missing drivers / vacant cabins.
-* **Offline Acoustic & NLP Distress Monitoring (`audio_test.py`):** 
-  * Powered by Vosk offline speech recognition to protect driver privacy.
-  * Features a **5-second false-alarm verification window** that listens for cancellation phrases (e.g., *"I'm fine"*, *"false alarm"*) before escalating safety events.
-* **Real-Time Cloud Gateway (`main.py`):** 
-  * Built on FastAPI supporting asynchronous REST endpoints and WebSocket broadcast channels (`/ws/dashboard`) for sub-15ms event propagation.
-* **Enterprise Web Command Center (`App.jsx`):** 
-  * Live WebSocket telemetry stream with instant GPS map linking and audit log CSV data exports[cite: 1].
-  * **Human-in-the-Loop Operator Validation:** Operators can review live feeds and click **Dismiss / False Positive** or **Dispatch** authorities[cite: 1].
-
----
-
-## Repository Structure
-
-Since this project follows a unified monorepo standard, both backend and frontend components reside in a single public repository:
-
-<img width="591" height="335" alt="image" src="https://github.com/user-attachments/assets/98617722-2d31-4d62-b09c-311c2136baab" />
-
-
-Prerequisites & Setup
-Ensure you have the following installed on your machine:
-
-Python 3.10+[cite: 1]
-
-Node.js & npm (for the React dashboard)[cite: 1]
-
-Webcam and microphone permissions enabled[cite: 1].
-
-1. Clone the Repository
-Bash
-git clone [https://github.com/YOUR_USERNAME/TripGuard-Enterprise.git](https://github.com/YOUR_USERNAME/TripGuard-Enterprise.git)
-cd TripGuard-Enterprise
-2. Install Python Dependencies
-Bash
-pip install fastapi uvicorn opencv-python mediapipe numpy pyaudio requests vosk
-(Note: Download the offline Vosk speech model vosk-model-small-en-us-0.15 and place it inside your ai_prototypes directory)[cite: 1].
-
-3. Install Frontend Dependencies
-Bash
-cd web_dashboard
-npm install
-cd ..
-How to Run (4 Concurrent Streams)
-To test the end-to-end system live, open four separate terminal tabs and run each service:
-
-Tab 1: Start the FastAPI Cloud Backend
-Bash
-cd cloud_backend
-uvicorn main:app --reload --port 8000
-Tab 2: Start the React Enterprise Dashboard
-Bash
-cd web_dashboard
-npm run dev
-(Open the local browser URL provided, typically http://localhost:5173)[cite: 1].
-
-Tab 3: Run the Autonomous Edge Vision Monitor
-Bash
-cd ai_prototypes
-python vision_monitor.py
-Tab 4: Run the Autonomous Edge Audio Monitor
-Bash
-cd ai_prototypes
-python audio_test.py
-Interview & Placement Discussion Points
-Edge vs. Cloud Trade-offs: Heavy computer vision and speech-to-text inference run locally on the edge device to ensure zero-latency critical responses, while lightweight JSON metadata payloads are dispatched to the cloud backend for fleet aggregation[cite: 1].
-
-False-Positive Mitigation: Implements client-side cooldown timers on vision scripts and a 5-second verification buffer on audio triggers combined with human operator dismissal workflows to prevent unnecessary emergency service dispatches[cite: 1].
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
