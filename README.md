@@ -12,6 +12,49 @@
 
 ---
 
+The system divides its responsibilities cleanly into two primary tiers: the **Edge AI In-Cab Client** (local real-time threat detection) and the **Cloud & Enterprise Web Command Center** (centralized telemetry aggregation and human-in-the-loop operator validation).
+
+---
+
+### 1. Edge AI In-Cab Monitoring Tier (`/ai_prototypes`)
+
+The edge tier runs locally inside the vehicle, ensuring zero-latency detection of critical emergencies without relying on constant cloud connectivity for heavy AI inference.
+
+* **Autonomous Vision Drowsiness & Occupant Tracker (`vision_monitor.py`):**
+  * **Multi-Passenger Depth & Spatial Filtering:** Utilizing Google’s **MediaPipe Face Mesh** engine, the script tracks up to 6 cabin occupants simultaneously. It applies sophisticated spatial X-coordinate mapping and cheekbone geometry (landmarks `234` and `454`) to isolate the primary driver from passengers.
+  * **Eye Aspect Ratio (EAR) Calculation:** The system computes the precise mathematical ratio between the vertical eyelid distances and the horizontal eye width using high-precision facial landmarks:
+    $$\text{EAR} = \frac{\Vert{}p_2 - p_6\Vert{} + \Vert{}p_3 - p_5\Vert{}}{2 \times \Vert{}p_1 - p_4\Vert{}}$$
+  * **Micro-Sleep & Absence Detection:** If a driver's EAR drops below threshold configuration values for consecutive frames (e.g., 15–25 frames) or if the driver's face is lost from the Region of Interest entirely, the edge client locks in an emergency state.
+  * **Smart Client-Side Debouncing:** To prevent network flooding, a built-in cooldown timer (`COOLDOWN_SECONDS = 30.0`) ensures that continuous hazard frames throttle REST dispatch requests effectively.
+
+* **Offline Acoustic & NLP Distress Listener (`audio_test.py`):**
+  * **Privacy-First Offline Speech Recognition:** Powered by **Vosk** and running entirely offline, the audio monitor analyzes cabin audio streams without streaming raw audio data to third-party cloud servers, safeguarding passenger privacy.
+  * **Contextual Distress Dictionaries:** Scans real-time transcripts against an expanded dictionary of distress triggers (*"help me"*, *"let me out"*, *"call the police"*, high-decibel acoustic anomalies/screams)[cite: 4].
+  * **False-Alarm Verification Window:** When an initial distress phrase is matched, the system initiates a **5-second cancellation countdown**[cite: 4]. If the driver or a passenger speaks a cancellation phrase (*"I'm fine"*, *"false alarm"*) within that window, the alert is safely aborted[cite: 4]. If the timer expires without cancellation, the emergency is formally escalated[cite: 4].
+
+---
+
+### 2. Cloud Gateway & Backend Tier (`/cloud_backend`)
+
+* **FastAPI Asynchronous Gateway (`main.py`):**
+  * Acts as the central orchestrator and webhook receiver. It exposes asynchronous REST endpoints (`POST /api/v1/alerts`) that accept standardized JSON safety telemetry payloads from any edge monitor.
+  * Manages an active **WebSocket Hub (`/ws/dashboard`)** that instantly pushes incoming alerts to connected web clients with sub-15ms propagation latency.
+
+---
+
+### 3. Enterprise Web Command Center Tier (`/web_dashboard`)
+
+* **React & Tailwind CSS Command Center (`App.jsx`):**
+  * Renders a real-time fleet overview dashboard displaying active emergency metrics, system latency counters, and live WebSocket connection states.
+  * **Live Telemetry & GPS Mapping:** Automatically logs incoming alerts into a dynamic table with live Google Maps deep links (`location_lat`, `location_lng`) for rapid geographical reference.
+  * **Human-in-the-Loop Operator Validation:** Recognizes that AI can occasionally generate false positives. Operators are provided with dual action workflows on every live alert:
+    1. **Dispatch:** Formally logs the emergency, moves the incident to the permanent audit log, and simulates emergency service dispatch.
+    2. **Dismiss / False Positive:** Allows operators to review the live feed or telemetry and clear false alarms instantly, maintaining a clean audit trail.
+  * **Audit Log & CSV Export:** Automatically records resolved or dismissed incidents with timestamps and weekdays, enabling fleet managers to export full compliance reports via CSV data downloads.
+ 
+
+ ---
+
 ## Key Features
 
 * **Autonomous Edge AI Vision (`vision_monitor.py`):** 
