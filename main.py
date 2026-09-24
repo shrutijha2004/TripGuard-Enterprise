@@ -1,89 +1,103 @@
-from fastapi import FastAPI, HTTPException, status, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from datetime import datetime
-import logging
-from typing import List
+import sys
+import os
+import time
+import json
+import threading
+import pyaudio
+from vosk import Model, KaldiRecognizer
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("TripguardCloud")
+import config
+from alert_manager import AlertManager
+from vision_monitor import VisionMonitor
 
-app = FastAPI(
-    title="Tripguard Enterprise Fleet Ingestion API",
-    description="Centralized REST and WebSocket gateway for Uber and Rapido safety telemetry.",
-    version="2.0.0"
-)
+class AudioMonitorThread(threading.Thread):
+    def __init__(self, alert_callback):
+        super().__init__()
+        self.alert_callback = alert_callback
+        self.running = True
+        self.daemon = True
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    def run(self):
+        if not os.path.exists(config.VOSK_MODEL_PATH):
+            print(f"❌ Audio Engine Error: Vosk model missing at {config.VOSK_MODEL_PATH}")
+            return
 
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        model = Model(config.VOSK_MODEL_PATH)
+        recognizer = KaldiRecognizer(model, config.AUDIO_SAMPLE_RATE)
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
+        p = pyaudio.PyAudio()
+        stream = p.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=config.AUDIO_SAMPLE_RATE,
+            input=True,
+            frames_per_buffer=8192
+        )
+        stream.start_stream()
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        print("🎙️ Audio AI Engine active: Listening for vocal distress patterns...")
+        verification_mode = False
+        timer_start = 0.0
 
-    async def broadcast(self, message: dict):
-        for connection in self.active_connections:
-            await connection.send_json(message)
+        try:
+            while self.running:
+                data = stream.read(config.AUDIO_CHUNK_SIZE, exception_on_overflow=False)
+                if recognizer.AcceptWaveform(data):
+                    result = json.loads(recognizer.Result())
+                    text = result.get("text", "").lower()
 
-manager = ConnectionManager()
+                    if text:
+                        current_time = time.time()
+                        if verification_mode:
+                            if current_time - timer_start < config.VERIFICATION_DURATION:
+                                if any(cp in text for cp in config.CANCELLATION_PHRASES):
+                                    print(f"\n✅ Voice cancellation phrase detected: '{text}'. Alarm cleared.")
+                                    verification_mode = False
+                                    continue
+                            else:
+                                self.alert_callback("AUDIO_DISTRESS_UNCONFIRMED", "Distress trigger without vocal cancellation.")
+                                verification_mode = False
 
-class SafetyAlert(BaseModel):
-    vehicle_id: str = Field(..., example="CAB-9924-NY")
-    driver_id: str = Field(..., example="DRV-4821")
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
-    distress_phrase: str = Field(..., example="help me")
-    vision_status: str = Field(..., example="DROWSINESS_DETECTED")
-    confidence_score: float = Field(..., ge=0.0, le=1.0, example=0.94)
-    location_lat: float = Field(..., example=28.6139)
-    location_lng: float = Field(..., example=77.2090)
+                        if any(dt in text for dt in config.DISTRESS_TRIGGERS) and not verification_mode:
+                            print(f"\n⚠️ DISTRESS PATTERN DETECTED: '{text}'")
+                            print(f"⏳ Verification timer started ({config.VERIFICATION_DURATION}s to cancel)...")
+                            verification_mode = True
+                            timer_start = time.time()
+                else:
+                    if verification_mode and (time.time() - timer_start >= config.VERIFICATION_DURATION):
+                        self.alert_callback("AUDIO_DISTRESS_TIMEOUT", "Distress phrase confirmed (cancellation window elapsed).")
+                        verification_mode = False
+        finally:
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
 
-@app.get("/")
-def health_check():
-    return {"status": "online", "service": "Tripguard Fleet Gateway", "timestamp": datetime.utcnow().isoformat()}
+    def stop(self):
+        self.running = False
 
-@app.post("/api/v1/alerts", status_code=status.HTTP_201_CREATED)
-async def receive_safety_alert(alert: SafetyAlert):
-    logger.info(f"🚨 INCOMING SAFETY ALERT FROM VEHICLE: {alert.vehicle_id}")
+def main():
+    print("=" * 60)
+    print("       TRIPGUARD MULTIMODAL IN-CAB SAFETY SYSTEM       ")
+    print("=" * 60)
 
-    dispatch_status = "CRITICAL" if alert.confidence_score > 0.85 else "WARNING"
-    
-    dashboard_payload = {
-        "id": f"TG-{int(datetime.utcnow().timestamp())}",
-        "timestamp": alert.timestamp,
-        "event_type": f"AI_{alert.vision_status}",
-        "details": f"Vocal: '{alert.distress_phrase}' | Vision Confidence: {int(alert.confidence_score * 100)}%",
-        "vehicle_id": alert.vehicle_id,
-        "driver_id": alert.driver_id,
-        "location": {"lat": alert.location_lat, "lon": alert.location_lng},
-        "status": dispatch_status
-    }
+    alert_mgr = AlertManager()
 
-    await manager.broadcast(dashboard_payload)
+    def safety_event_handler(event_type, details):
+        alert_mgr.dispatch_alert(event_type=event_type, details=details)
 
-    return {
-        "status": "success",
-        "message": "Alert processed and broadcasted to Fleet Command.",
-        "alert_id": dashboard_payload["id"],
-        "action_taken": dispatch_status
-    }
+    # Launch Audio Processing in Background Thread
+    audio_thread = AudioMonitorThread(alert_callback=safety_event_handler)
+    audio_thread.start()
 
-@app.websocket("/ws/dashboard")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+    # Launch Vision Processing on Main Thread
+    vision_mon = VisionMonitor(camera_idx=config.CAMERA_INDEX)
     try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        vision_mon.start_monitoring(callback_on_event=safety_event_handler)
+    except KeyboardInterrupt:
+        print("\nShutting down Tripguard system...")
+    finally:
+        audio_thread.stop()
+        print("Tripguard safely terminated.")
+
+if __name__ == "__main__":
+    main()
