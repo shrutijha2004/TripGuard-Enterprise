@@ -9,29 +9,6 @@
 ## Project Name & Description
 **TripGuard Enterprise** is a production-grade, end-to-end fleet safety and monitoring architecture designed to prevent road accidents through real-time **Edge AI computer vision** and **offline speech recognition**. It bridges edge devices (in-cab hardware monitors) with a high-performance **FastAPI cloud backend** and an enterprise **React web dashboard** featuring real-time WebSocket telemetry and human-in-the-loop operator validation.
 
----
-
-## System Architecture & Workflow
-
-graph TD
-    subgraph Edge AI Devices (In-Cab Hardware)
-        A[Webcam Feed] -->|MediaPipe Face Mesh| B[Vision Monitor: EAR Drowsiness & Occupant Tracking]
-        C[Microphone Stream] -->|Vosk Offline Speech-to-Text| D[Audio Monitor: NLP Distress & Scream Detection]
-    end
-subgraph Cloud Gateway (Backend)
-        B -->|HTTP POST JSON Telemetry| E[FastAPI Cloud Gateway: main.py]
-        D -->|HTTP POST JSON Telemetry| E
-    end
-subgraph Enterprise Web Command Center
-        E -->|WebSocket Broadcast channel /ws/dashboard| F[React Enterprise Dashboard: App.jsx]
-        F -->|Real-time UI Render| G[Live Telemetry Feed & GPS Map Link]
-        G -->|Operator Action: Dispatch| H[Audit Log CSV Export & Authorities Dispatch]
-        G -->|Operator Action: Dismiss| I[False Positive Clearance & Audit Log]
-    end
-style E fill:#005571,stroke:#61DAFB,stroke-width:2px,color:#fff
-style F fill:#1e293b,stroke:#61DAFB,stroke-width:2px,color:#fff
-style B fill:#0f172a,stroke:#38bdf8,stroke-width:1px,color:#fff
-style D fill:#0f172a,stroke:#38bdf8,stroke-width:1px,color:#fff
 
 ---
 
@@ -56,20 +33,7 @@ style D fill:#0f172a,stroke:#38bdf8,stroke-width:1px,color:#fff
 
 Since this project follows a unified monorepo standard, both backend and frontend components reside in a single public repository:
 
-```text
-TripGuard/
-├── cloud_backend/
-│   └── main.py              # FastAPI cloud gateway and WebSocket hub
-├── web_dashboard/
-│   ├── src/
-│   │   └── App.jsx          # React enterprise command center UI
-│   ├── package.json
-│   └── ...
-├── ai_prototypes/
-│   ├── vision_monitor.py    # Autonomous edge AI webcam & drowsiness tracker
-│   └── audio_test.py        # Autonomous microphone NLP distress listener
-├── config.py                # Global system configuration & thresholds
-└── README.md
+<img width="591" height="335" alt="image" src="https://github.com/user-attachments/assets/98617722-2d31-4d62-b09c-311c2136baab" />
 
 
 Prerequisites & Setup
