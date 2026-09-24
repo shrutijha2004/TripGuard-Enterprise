@@ -1,0 +1,7 @@
+pyaudio
+vosk
+opencv-python
+mediapipe
+numpy
+twilio
+rapidfuzz
